@@ -1,0 +1,32 @@
+version: '3'
+
+services:
+    neo4j:
+        image: neo4j:latest
+        ports:
+            - 7474:7474
+            - 7687:7687
+        environment:
+            NEO4J_AUTH: neo4j/password
+            NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+        volumes:
+            - neo4j_data:/data
+            - neo4j_logs:/logs
+    bolt-proxy:
+        build:
+            context: .
+        ports:
+            - 8080:8080
+        environment:
+            BOLT_PROXY_BIND: "0.0.0.0:8080"
+            BOLT_PROXY_URI: "bolt://neo4j:7687"
+            BOLT_PROXY_USER: "neo4j"
+            BOLT_PROXY_PASSWORD: "password"
+            BOLT_PROXY_DEBUG: "1"
+        restart: on-failure
+        depends_on:
+            - neo4j
+
+volumes:
+    neo4j_data:
+    neo4j_logs:
