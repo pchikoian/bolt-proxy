@@ -10,8 +10,10 @@ services:
         image: bolt-proxy
         ports:
             - 8080:8080
+            - 9090:9090
         environment:
             BOLT_PROXY_BIND: "0.0.0.0:8080"
             BOLT_PROXY_URI: "bolt://memgraph:7687"
+            BOLT_PROXY_METRICS_PORT: "9090"
             BOLT_PROXY_DEBUG: "1"
         restart: on-failure

@@ -171,6 +171,51 @@ sudo apt-get install cypher-shell
 
 ---
 
+## 4. Metrics Test Script
+
+**File:** `test_metrics.sh`
+
+A simple script to test and demonstrate the Prometheus metrics endpoint.
+
+**Usage:**
+```bash
+# Make executable
+chmod +x test_metrics.sh
+
+# Run the test
+./test_metrics.sh
+```
+
+**What it does:**
+- Checks metrics endpoint availability
+- Shows current connection and health check metrics
+- Generates test traffic (health checks)
+- Displays updated metrics
+- Lists all available metric categories
+
+**Output example:**
+```
+✓ Metrics endpoint is accessible
+Current connection metrics:
+  bolt_proxy_connections_total 5
+  bolt_proxy_active_connections 0
+
+Generating test traffic...
+Updated health check metrics:
+  bolt_proxy_health_checks_total{status="success"} 10
+```
+
+**Direct access:**
+```bash
+# View all metrics
+curl http://localhost:9090/metrics
+
+# View only bolt-proxy metrics
+curl http://localhost:9090/metrics | grep "bolt_proxy_"
+```
+
+---
+
 ## Additional Examples
 
 ### Using with mgconsole (Memgraph CLI)

@@ -17,11 +17,13 @@ services:
             context: .
         ports:
             - 8080:8080
+            - 9090:9090
         environment:
             BOLT_PROXY_BIND: "0.0.0.0:8080"
             BOLT_PROXY_URI: "bolt://neo4j:7687"
             BOLT_PROXY_USER: "neo4j"
             BOLT_PROXY_PASSWORD: "password"
+            BOLT_PROXY_METRICS_PORT: "9090"
             BOLT_PROXY_DEBUG: "1"
         restart: on-failure
         depends_on:

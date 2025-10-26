@@ -57,6 +57,27 @@ or set up the env variables:
 - `BOLT_PROXY_CERT` -- path to the x509 certificate (.pem) file
 - `BOLT_PROXY_KEY` -- path to the x509 private key file
 - `BOLT_PROXY_DEBUG` -- set to any value to enable debug mode/logging
+- `BOLT_PROXY_METRICS_PORT` -- port for Prometheus metrics endpoint (default: 9090)
+
+## 📊 Metrics
+
+Bolt-proxy exposes Prometheus metrics on the `/metrics` endpoint (default port: 9090).
+
+**Quick access:**
+```bash
+curl http://localhost:9090/metrics
+```
+
+**Available metrics:**
+- Connection metrics (active connections, total connections, duration)
+- Authentication metrics (attempts, success/failure rates, duration)
+- Message forwarding metrics (count, bytes, processing time)
+- Backend metrics (connections, errors, latency)
+- Transaction metrics
+- Health check metrics
+- Protocol negotiation metrics
+
+For detailed information, see [METRICS.md](METRICS.md).
 
 ## 🔎 Authentication & Authorization
 

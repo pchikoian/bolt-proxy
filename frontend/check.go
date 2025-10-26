@@ -22,6 +22,8 @@ import (
 	"errors"
 	"net"
 	"net/http"
+
+	"github.com/memgraph/bolt-proxy/metrics"
 )
 
 const (
@@ -44,6 +46,7 @@ func HandleHealthCheck(conn net.Conn, buf []byte) error {
 
 	_, err := http.ReadRequest(bufioReader)
 	if err != nil {
+		metrics.RecordHealthCheck("malformed")
 		_, _ = conn.Write([]byte(BAD_RESPONSE))
 		return errors.New("malformed http health check request")
 	}
@@ -51,6 +54,12 @@ func HandleHealthCheck(conn net.Conn, buf []byte) error {
 	// TODO: eventually we should check things are working right, but for
 	// now, just consider it a liveness check.
 	_, err = conn.Write([]byte(OK_RESPONSE))
+
+	if err == nil {
+		metrics.RecordHealthCheck("success")
+	} else {
+		metrics.RecordHealthCheck("failure")
+	}
 
 	return err
 }

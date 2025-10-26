@@ -22,16 +22,19 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 
 	"github.com/memgraph/bolt-proxy/backend"
 	"github.com/memgraph/bolt-proxy/frontend"
 	"github.com/memgraph/bolt-proxy/proxy_logger"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Parameters struct {
 	debugMode          bool
 	bindOn             string
+	metricsPort        string
 	proxyTo            string
 	username, password string
 	certFile, keyFile  string
@@ -49,6 +52,7 @@ func init() {
 	var (
 		debugMode          bool
 		bindOn             string
+		metricsPort        string
 		proxyTo            string
 		username, password string
 		certFile, keyFile  string
@@ -57,6 +61,10 @@ func init() {
 	bindOn, found := os.LookupEnv("BOLT_PROXY_BIND")
 	if !found {
 		bindOn = DEFAULT_BIND
+	}
+	metricsPort = os.Getenv("BOLT_PROXY_METRICS_PORT")
+	if metricsPort == "" {
+		metricsPort = "9090"  // Default Prometheus metrics port
 	}
 	proxyTo, found = os.LookupEnv("BOLT_PROXY_URI")
 	if !found {
@@ -73,6 +81,7 @@ func init() {
 
 	// to keep it easy, let the defaults be populated by the env vars
 	flag.StringVar(&proxy_params.bindOn, "bind", bindOn, "host:port to bind to")
+	flag.StringVar(&proxy_params.metricsPort, "metrics-port", metricsPort, "port for Prometheus metrics endpoint")
 	flag.StringVar(&proxy_params.proxyTo, "uri", proxyTo, "bolt uri for remote Memgraph")
 	flag.StringVar(&proxy_params.username, "user", username, "Memgraph username")
 	flag.StringVar(&proxy_params.password, "pass", password, "Memgraph password")
@@ -104,6 +113,17 @@ func main() {
 	}
 	proxy_logger.InfoLog.Println("connected to backend", proxy_params.proxyTo)
 	proxy_logger.InfoLog.Printf("found backend version %s\n", back.Version())
+
+	// ---------- METRICS
+	// Start Prometheus metrics HTTP server in a goroutine
+	metricsAddr := ":" + proxy_params.metricsPort
+	go func() {
+		proxy_logger.InfoLog.Printf("starting metrics server on %s\n", metricsAddr)
+		http.Handle("/metrics", promhttp.Handler())
+		if err := http.ListenAndServe(metricsAddr, nil); err != nil {
+			proxy_logger.WarnLog.Printf("metrics server failed: %v\n", err)
+		}
+	}()
 
 	// ---------- FRONT END
 	proxy_logger.InfoLog.Println("starting bolt-proxy frontend")
