@@ -24,6 +24,7 @@ import (
 
 	"github.com/memgraph/bolt-proxy/backend"
 	"github.com/memgraph/bolt-proxy/bolt"
+	"github.com/memgraph/bolt-proxy/metrics"
 	"github.com/memgraph/bolt-proxy/proxy_logger"
 )
 
@@ -47,7 +48,12 @@ func newCommChans(size int) CommunicationChannels {
 // If so, wrap the incoming conn into a BoltConn and pass it off to
 // a client handler
 func HandleClient(conn net.Conn, backend_server *backend.Backend) {
+	startTime := time.Now()
+	metrics.RecordConnection()
+
 	defer func() {
+		metrics.RecordConnectionClosed()
+		metrics.ConnectionDuration.Observe(time.Since(startTime).Seconds())
 		proxy_logger.DebugLog.Printf("closing client connection from %s",
 			conn.RemoteAddr())
 		conn.Close()

@@ -65,7 +65,9 @@ func NewMonitor(user, password, uri string, hosts ...string) (*Monitor, error) {
 		return nil, err
 	}
 
-	version := bolt.Version{Major: 1, Minor: 0, Patch: 0}
+	// Use Bolt 4.4 for compatibility with modern clients and Memgraph/Neo4j
+	// Bolt 4.4 is widely supported by both Neo4j 4.x+ and Memgraph 2.x+
+	version := bolt.Version{Major: 4, Minor: 4, Patch: 0}
 
 	// Get the cluster members and ttl details
 	u, err := url.Parse(uri)

@@ -1,12 +1,12 @@
-FROM gcr.io/gcp-runtimes/go1-builder:1.15 as builder
+FROM golang:1.24 as builder
 
 WORKDIR /go/src/app
 ENV CGO_ENABLED=0
 COPY go.mod go.sum ./
-RUN /usr/local/go/bin/go mod download
+RUN go mod download
 
 COPY . ./
-RUN /usr/local/go/bin/go build -o bolt-proxy .
+RUN go build -o bolt-proxy .
 
 FROM gcr.io/distroless/base:latest
 COPY --from=builder /go/src/app/bolt-proxy /usr/local/bin/bolt-proxy

@@ -104,11 +104,13 @@ func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltCon
 		return nil, err
 	}
 
-	handshake := append(bolt.BoltSignature[:], backend_version...)
+	// Build handshake with multiple version options for better compatibility
+	// Offer: 4.4, 4.3, 4.1, 1.0 (let Memgraph/Neo4j choose the best it supports)
+	handshake := append(bolt.BoltSignature[:], backend_version...)  // Primary version (4.4)
 	handshake = append(handshake, []byte{
-		0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00}...)
+		0x00, 0x00, 0x03, 0x04,  // Bolt 4.3
+		0x00, 0x00, 0x01, 0x04,  // Bolt 4.1
+		0x00, 0x00, 0x00, 0x01}...)  // Bolt 1.0
 	_, err = conn.Write(handshake)
 
 	if err != nil {
