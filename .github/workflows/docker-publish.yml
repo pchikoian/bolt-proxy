@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 env:
-  DOCKERHUB_REPO_NEO4J_PROXY: ricklin/neo4j_proxy
+  DOCKERHUB_REPO_NEO4J_PROXY: ricklin/bolt_proxy
 
 jobs:
   echo_context:
