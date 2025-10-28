@@ -22,8 +22,10 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"time"
 
 	"github.com/memgraph/bolt-proxy/bolt"
+	"github.com/memgraph/bolt-proxy/metrics"
 	"github.com/memgraph/bolt-proxy/proxy_logger"
 )
 
@@ -85,6 +87,7 @@ func (b *Backend) IsAuthEnabled() bool {
 }
 
 func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltConn, error) {
+	startTime := time.Now()
 	backend_version := b.Version().Bytes()
 	address := b.monitor.host
 	useTls := b.tls
@@ -101,8 +104,11 @@ func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltCon
 		conn, err = net.Dial(network, address)
 	}
 	if err != nil {
+		metrics.RecordBackendConnectionError(address, "dial_failed")
+		metrics.BackendLatency.WithLabelValues(address).Observe(time.Since(startTime).Seconds())
 		return nil, err
 	}
+	metrics.RecordBackendConnection(address)
 
 	// Build handshake with multiple version options for better compatibility
 	// Offer: 4.4, 4.3, 4.1, 1.0 (let Memgraph/Neo4j choose the best it supports)
@@ -114,6 +120,9 @@ func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltCon
 	_, err = conn.Write(handshake)
 
 	if err != nil {
+		metrics.RecordBackendConnectionError(address, "handshake_send_failed")
+		metrics.RecordBackendConnectionClosed(address)
+		metrics.BackendLatency.WithLabelValues(address).Observe(time.Since(startTime).Seconds())
 		msg := fmt.Sprintf("couldn't send handshake to auth server %s: %s", address, err)
 		conn.Close()
 		return nil, errors.New(msg)
@@ -124,6 +133,9 @@ func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltCon
 	buf := make([]byte, 256)
 	n, err := conn.Read(buf)
 	if err != nil || n != 4 {
+		metrics.RecordBackendConnectionError(address, "handshake_response_invalid")
+		metrics.RecordBackendConnectionClosed(address)
+		metrics.BackendLatency.WithLabelValues(address).Observe(time.Since(startTime).Seconds())
 		msg := fmt.Sprintf("didn't get valid handshake response from auth server %s: %s", address, err)
 		conn.Close()
 		return nil, errors.New(msg)
@@ -132,6 +144,9 @@ func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltCon
 	// Try performing the bolt auth the given hello message
 	_, err = conn.Write(hello)
 	if err != nil {
+		metrics.RecordBackendConnectionError(address, "hello_send_failed")
+		metrics.RecordBackendConnectionClosed(address)
+		metrics.BackendLatency.WithLabelValues(address).Observe(time.Since(startTime).Seconds())
 		msg := fmt.Sprintf("failed to send hello buffer to server %s: %s", address, err)
 		conn.Close()
 		return nil, errors.New(msg)
@@ -139,6 +154,9 @@ func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltCon
 
 	n, err = conn.Read(buf)
 	if err != nil {
+		metrics.RecordBackendConnectionError(address, "auth_response_failed")
+		metrics.RecordBackendConnectionClosed(address)
+		metrics.BackendLatency.WithLabelValues(address).Observe(time.Since(startTime).Seconds())
 		msg := fmt.Sprintf("failed to get auth response from auth server %s: %s", address, err)
 		conn.Close()
 		return nil, errors.New(msg)
@@ -148,6 +166,9 @@ func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltCon
 	switch msg {
 	case bolt.FailureMsg:
 		// See if we can extract the error message
+		metrics.RecordBackendConnectionError(address, "auth_failed")
+		metrics.RecordBackendConnectionClosed(address)
+		metrics.BackendLatency.WithLabelValues(address).Observe(time.Since(startTime).Seconds())
 		r, _, errParse := bolt.ParseMap(buf[4:n])
 		if errParse != nil {
 			conn.Close()
@@ -166,11 +187,15 @@ func (b *Backend) InitBoltConnection(hello []byte, network string) (bolt.BoltCon
 		return nil, errors.New("could not parse auth server response")
 	case bolt.SuccessMsg:
 		// The only happy outcome! Keep conn open.
+		metrics.BackendLatency.WithLabelValues(address).Observe(time.Since(startTime).Seconds())
 		bolt_connection := bolt.NewDirectConn(conn)
 		return bolt_connection, nil
 	}
 
 	// Try to be polite and say goodbye if we know we failed.
+	metrics.RecordBackendConnectionError(address, "unknown_response")
+	metrics.RecordBackendConnectionClosed(address)
+	metrics.BackendLatency.WithLabelValues(address).Observe(time.Since(startTime).Seconds())
 	_, err = conn.Write([]byte{0x00, 0x02, 0xb0, 0x02})
 	if err != nil {
 		return nil, fmt.Errorf("write: %v", err)

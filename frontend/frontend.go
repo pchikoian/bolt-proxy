@@ -91,6 +91,9 @@ func HandleClient(conn net.Conn, backend_server *backend.Backend) {
 			proxy_logger.WarnLog.Printf("err occurred version negotiation: %v", err)
 			return
 		}
+		// Record Bolt version negotiation
+		v, _ := bolt.ParseVersion(clientVersion)
+		metrics.RecordBoltVersion(v.String())
 		// regular bolt
 		proxy_logger.InfoLog.Println("regular bolt")
 		handleBoltConn(bolt.NewDirectConn(conn), clientVersion, backend_server)
@@ -148,8 +151,12 @@ func handleBoltConn(client bolt.BoltConn, clientVersion []byte, back *backend.Ba
 	proxy_logger.DebugLog.Println("expected HelloMsg, got:", hello.T)
 
 	if back.IsAuthEnabled() {
+		authStart := time.Now()
 		err := back.Authenticate(hello)
+		metrics.AuthDuration.Observe(time.Since(authStart).Seconds())
+
 		if err != nil {
+			metrics.RecordAuthFailure()
 			proxy_logger.WarnLog.Printf("not authorized to use proxy: %v", err)
 			// TODO clients wont recognize unless it is specifically from Memgraph
 			errorMsgSerialized, err := bolt.TinyMapToBytes(map[string]interface{}{
@@ -174,6 +181,7 @@ func handleBoltConn(client bolt.BoltConn, clientVersion []byte, back *backend.Ba
 			}
 			return
 		}
+		metrics.RecordAuthSuccess()
 	}
 	server_conn, err := back.InitBoltConnection(hello.Data, "tcp")
 	if err != nil {
@@ -252,11 +260,22 @@ func proxyListen(client bolt.BoltConn, server bolt.BoltConn, back *backend.Backe
 		case bolt.BeginMsg:
 			startingTx = true
 			manualTx = true
+			metrics.RecordTransactionStart()
 		case bolt.RunMsg:
 			if !manualTx {
 				startingTx = true
+				metrics.RecordTransactionStart()
 			}
-		case bolt.CommitMsg, bolt.RollbackMsg:
+		case bolt.PullMsg:
+			metrics.RecordQueryExecution("pull")
+		case bolt.DiscardMsg:
+			metrics.RecordQueryExecution("discard")
+		case bolt.CommitMsg:
+			metrics.RecordTransactionEnd("committed")
+			manualTx = false
+			startingTx = false
+		case bolt.RollbackMsg:
+			metrics.RecordTransactionEnd("rolled_back")
 			manualTx = false
 			startingTx = false
 		}
@@ -278,9 +297,11 @@ func proxyListen(client bolt.BoltConn, server bolt.BoltConn, back *backend.Backe
 			err = server.WriteMessage(msg)
 			if err != nil {
 				// TODO: figure out best way to handle failed writes
+				metrics.RecordError("message_write_failed", "client_to_server")
 				panic(err)
 			}
 			proxy_logger.LogMessage("P->S", msg)
+			metrics.RecordMessageForwarded("client_to_server", string(msg.T), len(msg.Data))
 		} else {
 			// we have no connection since there's no tx...
 			// handle only specific, simple messages
@@ -289,6 +310,7 @@ func proxyListen(client bolt.BoltConn, server bolt.BoltConn, back *backend.Backe
 				// XXX: Neo4j Desktop does this when defining a
 				// remote dbms connection.
 				// simply send empty success message
+				metrics.RecordMessageForwarded("client_to_server", string(msg.T), len(msg.Data))
 				err := client.WriteMessage(&bolt.Message{
 					T: bolt.SuccessMsg,
 					Data: []byte{
@@ -300,8 +322,10 @@ func proxyListen(client bolt.BoltConn, server bolt.BoltConn, back *backend.Backe
 				})
 				if err != nil {
 					proxy_logger.DebugLog.Printf("failed to write message: %v", err)
+					metrics.RecordError("message_write_failed", "reset_response")
 				}
 			case bolt.GoodbyeMsg:
+				metrics.RecordMessageForwarded("client_to_server", string(msg.T), len(msg.Data))
 				return
 			}
 		}
@@ -324,11 +348,17 @@ func startNewTx(msg *bolt.Message, server bolt.BoltConn, back *backend.Backend, 
 		proxy_logger.DebugLog.Print("proxy_logger.DebugLog begin RUN")
 		pos := 4
 		// query
-		_, n, err = bolt.ParseString(msg.Data[pos:])
+		var query string
+		query, n, err = bolt.ParseString(msg.Data[pos:])
 		if err != nil {
 			proxy_logger.DebugLog.Println(err)
 			return
 		}
+		// Record CRUD operation and query execution metrics
+		crudType := metrics.ClassifyQuery(query)
+		metrics.RecordCRUDOperation(crudType)
+		metrics.RecordQueryExecution("run")
+
 		pos = pos + n
 		// query params
 		_, _, err = bolt.ParseMap(msg.Data[pos:])
@@ -386,9 +416,11 @@ func handleClientServerCommunication(client, server bolt.BoltConn, comm_chans *C
 				proxy_logger.LogMessage("P<-S", msg)
 				err := client.WriteMessage(msg)
 				if err != nil {
+					metrics.RecordError("message_write_failed", "server_to_client")
 					panic(err)
 				}
 				proxy_logger.LogMessage("C<-P", msg)
+				metrics.RecordMessageForwarded("server_to_client", string(msg.T), len(msg.Data))
 
 				// if know the server side is saying goodbye,
 				// we abort the loop

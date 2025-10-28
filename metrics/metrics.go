@@ -97,6 +97,24 @@ var (
 		Name: "bolt_proxy_bolt_version_negotiations_total",
 		Help: "Total number of Bolt version negotiations",
 	}, []string{"version"})
+
+	// CRUD operation metrics
+	CRUDOperations = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "bolt_proxy_crud_operations_total",
+		Help: "Total number of CRUD operations by type",
+	}, []string{"operation"}) // operation: create, read, update, delete, other
+
+	// Query metrics (Requests Per Query - RPQ)
+	QueryExecutions = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "bolt_proxy_query_executions_total",
+		Help: "Total number of query executions",
+	}, []string{"type"}) // type: run, pull, discard
+
+	QueryDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "bolt_proxy_query_duration_seconds",
+		Help:    "Duration of query execution in seconds",
+		Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+	}, []string{"type"})
 )
 
 // Helper functions to simplify metric recording
@@ -154,4 +172,12 @@ func RecordTransactionStart() {
 func RecordTransactionEnd(status string) {
 	ActiveTransactions.Dec()
 	TransactionsTotal.WithLabelValues(status).Inc()
+}
+
+func RecordCRUDOperation(operation string) {
+	CRUDOperations.WithLabelValues(operation).Inc()
+}
+
+func RecordQueryExecution(queryType string) {
+	QueryExecutions.WithLabelValues(queryType).Inc()
 }
