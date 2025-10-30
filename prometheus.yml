@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'bolt-proxy'
+    static_configs:
+      - targets: ['bolt-proxy:9090']
+        labels:
+          service: 'bolt-proxy'
+
+  - job_name: 'neo4j'
+    static_configs:
+      - targets: ['neo4j:2004']
+        labels:
+          service: 'neo4j'
