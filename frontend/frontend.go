@@ -256,6 +256,7 @@ func proxyListen(client bolt.BoltConn, server bolt.BoltConn, back *backend.Backe
 		// Inspect the client's message to discern transaction state
 		// We need to figure out if a transaction is starting and
 		// what kind of transaction (manual, auto, etc.) it might be.
+		queryOpStart := time.Now()
 		switch msg.T {
 		case bolt.BeginMsg:
 			startingTx = true
@@ -268,8 +269,10 @@ func proxyListen(client bolt.BoltConn, server bolt.BoltConn, back *backend.Backe
 			}
 		case bolt.PullMsg:
 			metrics.RecordQueryExecution("pull")
+			metrics.QueryDuration.WithLabelValues("pull").Observe(time.Since(queryOpStart).Seconds())
 		case bolt.DiscardMsg:
 			metrics.RecordQueryExecution("discard")
+			metrics.QueryDuration.WithLabelValues("discard").Observe(time.Since(queryOpStart).Seconds())
 		case bolt.CommitMsg:
 			metrics.RecordTransactionEnd("committed")
 			manualTx = false
@@ -294,7 +297,9 @@ func proxyListen(client bolt.BoltConn, server bolt.BoltConn, back *backend.Backe
 
 		// TODO: this connected/not-connected handling looks messy
 		if server != nil {
+			msgProcessStart := time.Now()
 			err = server.WriteMessage(msg)
+			metrics.MessageProcessingDuration.WithLabelValues(string(msg.T)).Observe(time.Since(msgProcessStart).Seconds())
 			if err != nil {
 				// TODO: figure out best way to handle failed writes
 				metrics.RecordError("message_write_failed", "client_to_server")
@@ -336,6 +341,7 @@ func startNewTx(msg *bolt.Message, server bolt.BoltConn, back *backend.Backend, 
 	var err error
 
 	var n int
+	queryStartTime := time.Now()
 	switch msg.T {
 	case bolt.BeginMsg:
 		proxy_logger.DebugLog.Print("proxy_logger.DebugLog begin MSG")
@@ -358,6 +364,7 @@ func startNewTx(msg *bolt.Message, server bolt.BoltConn, back *backend.Backend, 
 		crudType := metrics.ClassifyQuery(query)
 		metrics.RecordCRUDOperation(crudType)
 		metrics.RecordQueryExecution("run")
+		metrics.QueryDuration.WithLabelValues("run").Observe(time.Since(queryStartTime).Seconds())
 
 		pos = pos + n
 		// query params
@@ -414,7 +421,9 @@ func handleClientServerCommunication(client, server bolt.BoltConn, comm_chans *C
 		case msg, ok := <-server.R():
 			if ok {
 				proxy_logger.LogMessage("P<-S", msg)
+				msgProcessStart := time.Now()
 				err := client.WriteMessage(msg)
+				metrics.MessageProcessingDuration.WithLabelValues(string(msg.T)).Observe(time.Since(msgProcessStart).Seconds())
 				if err != nil {
 					metrics.RecordError("message_write_failed", "server_to_client")
 					panic(err)

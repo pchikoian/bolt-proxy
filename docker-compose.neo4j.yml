@@ -15,6 +15,16 @@ services:
         volumes:
             - neo4j_data:/data
             - neo4j_logs:/logs
+    auth-service:
+        image: python:3.9-slim
+        ports:
+            - 8081:8081
+        volumes:
+            - ./http_auth_server.py:/app/http_auth_server.py
+            - ./test_client.py:/app/test_client.py
+        working_dir: /app
+        command: python3 http_auth_server.py
+        restart: unless-stopped
     bolt-proxy:
         build:
             context: .
@@ -28,9 +38,13 @@ services:
             BOLT_PROXY_PASSWORD: "password"
             BOLT_PROXY_METRICS_PORT: "9090"
             BOLT_PROXY_DEBUG: "1"
+            # Enable authentication (uncomment to enable)
+            # AUTH_METHOD: "BASIC_AUTH"
+            # BASIC_AUTH_URL: "http://auth-service:8081"
         restart: on-failure
         depends_on:
             - neo4j
+            - auth-service
     prometheus:
         image: prom/prometheus:latest
         ports:
